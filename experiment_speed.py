@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     policy_net = PolicyValueNet(width, height, model_file='policy_8000.model')
     # play out: 1600 6400 12800
-    N_PLO = 12800
+    N_PLO = 1600
 
     baseline = MCTSPlayer(policy_net.policy_value_fn,
                           c_puct=5,

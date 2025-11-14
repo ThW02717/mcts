@@ -31,8 +31,7 @@ def _worker_job(args):
     worker：
     - get the board 
     - Build a MCTS，use global policy_value_fn
-    - 跑 n_playout 次 playout
-    - 回傳 (acts, visits)
+    - n_playout playout
     """
     state, n_playout, c_puct, temp, seed = args
 
@@ -54,13 +53,9 @@ class MCTSRootParallel(object):
         self._n_workers = n_workers
 
     def get_move_probs(self, state, temp=1e-3):
-        """
-        對外接口跟原本 MCTS.get_move_probs 一樣：
-        - 輸入 board state
-        - 回傳 (actions, probs)
-        """
+     
 
-        # worker=1 或 playout 數太小 → 直接用單執行緒 baseline
+        # worker=1 
         if self._n_workers <= 1 or self._n_playout <= self._n_workers:
             mcts = MCTS(self._policy, c_puct=self._c_puct,
                         n_playout=self._n_playout)
@@ -69,7 +64,7 @@ class MCTSRootParallel(object):
 
         n_per_worker = self._n_playout // self._n_workers
 
-        # 要送進去的 job list
+        #  job list
         jobs = []
         for _ in range(self._n_workers):
  
@@ -79,7 +74,7 @@ class MCTSRootParallel(object):
 
         total_visits = defaultdict(float)
 
-        # 建 ProcessPoolExecutor，每個 worker process 用 _init_worker 初始化 policy_value_fn
+        # 建ProcessPoolExecutor
         with ProcessPoolExecutor(
             max_workers=self._n_workers,
             initializer=_init_worker,
@@ -99,10 +94,7 @@ class MCTSRootParallel(object):
         return acts, act_probs
 
     def update_with_move(self, last_move):
-        """
-        為了介面相容保留這個函式，但這個 root-parallel 版本
-        每次 get_move_probs 都會重頭建一批 worker 跑樹，所以這裡就不做事。
-        """
+      
         return
 
     def __str__(self):
@@ -110,7 +102,7 @@ class MCTSRootParallel(object):
 
 
 class MCTSRootParallelPlayer(object):
-    """Player wrapper 使用 multiprocessing 版 root-parallel MCTS。"""
+   
 
     def __init__(self, policy_value_function,
                  c_puct=5, n_playout=2000, n_workers=4, is_selfplay=0):

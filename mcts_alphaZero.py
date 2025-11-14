@@ -154,10 +154,7 @@ class MCTS(object):
 
         return acts, act_probs
     def get_move_probs_and_visits(self, state, temp=1e-3):
-        """
-        跟原本 get_move_probs 一樣跑 playout，
-        但除了機率以外，還把每個 action 的 visit count 也一起吐出來。
-        """
+   
         for _ in range(self._n_playout):
             state_copy = copy.deepcopy(state)
             self._playout(state_copy)
