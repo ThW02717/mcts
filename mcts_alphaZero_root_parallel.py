@@ -3,14 +3,10 @@
 Root-parallel version of MCTS for the AlphaZero Gomoku project (multiprocessing).
 
 Idea:
-- 開 n_workers 個 process，每個 process 裡有自己的 MCTS + policy_value_fn。
-- 每個 worker 從同一個 root board 狀態出發，跑 n_playout / n_workers 次 playout。
-- 最後只合併 root 層每個 action 的 visit count，照原本公式算機率。
+-  n_workers process，each process has its own MCTS + policy_value_fn。
+- Each worker deal with (n_playout / n_workers) playout。
 
-注意：
-- 這是 CPU 多程序平行，會繞開 Python GIL，比 thread 版更有機會真的加速。
-- Windows 會用 spawn 模式，所以請務必確保呼叫這個 class 的檔案有
-  `if __name__ == "__main__":` 保護（你現在的 experiment_speed 有，沒問題）。
+
 """
 
 import copy
@@ -20,36 +16,29 @@ from concurrent.futures import ProcessPoolExecutor
 
 from mcts_alphaZero import MCTS, softmax
 
-# === 全域變數：每個 worker process 會初始化一次 ===
+
 _GLOBAL_POLICY_FN = None
 
 
 def _init_worker(policy_value_fn):
-    """
-    在每個 worker process 啟動時被呼叫一次，把 policy_value_fn 設成 global。
-    這樣之後每個 job 不用一直把 policy_value_fn 傳進來。
-    """
+    
     global _GLOBAL_POLICY_FN
     _GLOBAL_POLICY_FN = policy_value_fn
 
 
 def _worker_job(args):
     """
-    每個 worker 的實際工作：
-    - 取一份 board 狀態 (已經被 pickle / unpickle 處理過)
-    - 建一個 MCTS，用 global 的 policy_value_fn
+    worker：
+    - get the board 
+    - Build a MCTS，use global policy_value_fn
     - 跑 n_playout 次 playout
     - 回傳 (acts, visits)
     """
     state, n_playout, c_puct, temp, seed = args
 
-    # 簡單 seed 一下，讓每個 worker 路徑不要完全一樣
+
     np.random.seed(seed)
-
-    # 用全域的 policy fn 建自己的 MCTS
     mcts = MCTS(_GLOBAL_POLICY_FN, c_puct=c_puct, n_playout=n_playout)
-
-    # 直接用我們剛剛加的「同時回傳 visits」版本
     acts, _, visits = mcts.get_move_probs_and_visits(state, temp=temp)
     return acts, visits
 

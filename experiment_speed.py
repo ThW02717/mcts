@@ -1,3 +1,9 @@
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"       
+os.environ["MKL_NUM_THREADS"] = "1"      
+os.environ["NUMEXPR_NUM_THREADS"] = "1"   
+os.environ["TORCH_NUM_THREADS"] = "1"
 # experiment_speed.py
 import time
 import numpy as np
@@ -24,15 +30,14 @@ def measure_avg(player, board, trials=5):
 
 
 if __name__ == "__main__":
-    # 跟 human_play 一樣的設定
-    width, height, n_in_row = 10, 10, 5
 
+    width, height, n_in_row = 10, 10, 5
     board = Board(width=width, height=height, n_in_row=n_in_row)
-    board.init_board()   # 這行很重要：產生 availables
+    board.init_board()  
 
     policy_net = PolicyValueNet(width, height, model_file='policy_8000.model')
-
-    N_PLO = 1600
+    # play out: 1600 6400 12800
+    N_PLO = 12800
 
     baseline = MCTSPlayer(policy_net.policy_value_fn,
                           c_puct=5,
