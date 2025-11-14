@@ -1,0 +1,12 @@
+# Python venv
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# 你專案裡的一些不用傳的東西（自行調整）
+tmp/
+*.log
+model/
+policy_*.model

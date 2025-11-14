@@ -153,7 +153,25 @@ class MCTS(object):
         act_probs = softmax(1.0/temp * np.log(np.array(visits) + 1e-10))
 
         return acts, act_probs
+    def get_move_probs_and_visits(self, state, temp=1e-3):
+        """
+        跟原本 get_move_probs 一樣跑 playout，
+        但除了機率以外，還把每個 action 的 visit count 也一起吐出來。
+        """
+        for _ in range(self._n_playout):
+            state_copy = copy.deepcopy(state)
+            self._playout(state_copy)
 
+        if not self._root._children:
+            return [], np.array([], dtype=np.float32), np.array([], dtype=np.float32)
+
+        act_visits = [(act, node._n_visits)
+                      for act, node in self._root._children.items()]
+        acts, visits = zip(*act_visits)
+        visits = np.array(visits, dtype=np.float32)
+        act_probs = softmax(1.0 / temp * np.log(visits + 1e-10))
+
+        return list(acts), act_probs, visits
     def update_with_move(self, last_move):
         """Step forward in the tree, keeping everything we already know
         about the subtree.
