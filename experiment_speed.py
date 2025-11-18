@@ -65,5 +65,5 @@ if __name__ == "__main__":
                     ("root-2", root2),
                     ("root-4", root4),
                     ("root-8", root8)]:
-        mean_t, std_t = measure_avg(p, board, trials=5)
+        mean_t, std_t = measure_avg(p, board, trials=40)
         print(f"{name:8s}  avg = {mean_t:.4f} s   std = {std_t:.4f} s")
