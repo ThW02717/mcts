@@ -175,6 +175,9 @@ class Game(object):
         player2.set_player_ind(p2)
         players = {p1: player1, p2: player2}
 
+        simulation_count = np.zeros(3, dtype=int)
+        move_count = np.zeros(3, dtype=int) 
+
         states = [self.board.current_state()]
 
         if is_shown:
@@ -182,7 +185,13 @@ class Game(object):
         while True:
             current_player = self.board.get_current_player()
             player_in_turn = players[current_player]
-            move = player_in_turn.get_action(self.board)
+            player_in_turn.reset_player()
+            # print("before")
+            move, simulation = player_in_turn.get_action(self.board)
+            # print("After")
+            simulation_count[current_player] += simulation
+            move_count[current_player] += 1
+
             self.board.do_move(move)
             if is_shown:
                 self.graphic(self.board, player1.player, player2.player)
@@ -196,7 +205,7 @@ class Game(object):
                         print("Game end. Winner is", players[winner])
                     else:
                         print("Game end. Tie")
-                return winner, states
+                return winner, states, simulation_count, move_count
 
     def start_self_play(self, player, is_shown=0, temp=1e-3):
         """ start a self-play game using a MCTS player, reuse the search tree,

@@ -1,0 +1,4 @@
+Tester_Workers,Baseline,Tester_winrate_Black,Tester_winrate_White,Baseline_winrate_Black,Baseline_winrate_White,total_games,Tester_Win_rate,baseline_avg_simulations,tester_avg_simulations
+root_2,MCTS 2,1.0,1.0,0.0,0.0,2,100.00%,200.00,2416.67
+root_4,MCTS 2,1.0,1.0,0.0,0.0,2,100.00%,200.00,3431.58
+root_8,MCTS 2,1.0,1.0,0.0,0.0,2,100.00%,200.00,4355.56

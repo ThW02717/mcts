@@ -8,7 +8,7 @@ A pure implementation of the Monte Carlo Tree Search (MCTS)
 import numpy as np
 import copy
 from operator import itemgetter
-
+import time
 
 def rollout_policy_fn(board):
     """a coarse, fast version of policy_fn used in the rollout phase."""
@@ -96,7 +96,7 @@ class TreeNode(object):
 class MCTS(object):
     """A simple implementation of Monte Carlo Tree Search."""
 
-    def __init__(self, policy_value_fn, c_puct=5, n_playout=10000):
+    def __init__(self, policy_value_fn, c_puct=5, n_playout=10000, time_limit=None):
         """
         policy_value_fn: a function that takes in a board state and outputs
             a list of (action, probability) tuples and also a score in [-1, 1]
@@ -110,6 +110,7 @@ class MCTS(object):
         self._policy = policy_value_fn
         self._c_puct = c_puct
         self._n_playout = n_playout
+        self._time_limit = time_limit
 
     def _playout(self, state):
         """Run a single playout from the root to the leaf, getting a value at
@@ -162,11 +163,21 @@ class MCTS(object):
 
         Return: the selected action
         """
-        for n in range(self._n_playout):
-            state_copy = copy.deepcopy(state)
-            self._playout(state_copy)
+        simulation_count = 0
+        if self._time_limit is not None:
+            start_time = time.time()
+            simulation_count = 0
+            while time.time() - start_time < self._time_limit:
+                state_copy = copy.deepcopy(state)
+                self._playout(state_copy)
+                simulation_count += 1
+        else:
+            while simulation_count < self._n_playout:
+                state_copy = copy.deepcopy(state)
+                self._playout(state_copy)
+                simulation_count += 1
         return max(self._root._children.items(),
-                   key=lambda act_node: act_node[1]._n_visits)[0]
+                   key=lambda act_node: act_node[1]._n_visits)[0], simulation_count
 
     def update_with_move(self, last_move):
         """Step forward in the tree, keeping everything we already know
@@ -184,8 +195,8 @@ class MCTS(object):
 
 class MCTSPlayer(object):
     """AI player based on MCTS"""
-    def __init__(self, c_puct=5, n_playout=2000):
-        self.mcts = MCTS(policy_value_fn, c_puct, n_playout)
+    def __init__(self, c_puct=5, n_playout=2000, time_limit=None):
+        self.mcts = MCTS(policy_value_fn, c_puct, n_playout, time_limit)
 
     def set_player_ind(self, p):
         self.player = p
@@ -196,9 +207,9 @@ class MCTSPlayer(object):
     def get_action(self, board):
         sensible_moves = board.availables
         if len(sensible_moves) > 0:
-            move = self.mcts.get_move(board)
+            move, simulation_count = self.mcts.get_move(board)
             self.mcts.update_with_move(-1)
-            return move
+            return move, simulation_count
         else:
             print("WARNING: the board is full")
 

@@ -1,32 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-Root-parallel MCTS for the "pure" (rollout-based) MCTS
-Supports:
-- fixed n_playout
-- time_limit (sec)
+Root-parallel MCTS (pure, rollout-based) with:
+- n_playout or time_limit stopping condition
+- returns (best_move, simulation_count)
+
 """
 
-import time
 import copy
+import time
 import numpy as np
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 
-from mcts_pure import MCTS, policy_value_fn
+from mcts_pure import MCTS, policy_value_fn   
+
 
 
 def _worker_job(args):
-    """
-    Worker job: run `n_playout` playouts on a fresh MCTS, return visit counts.
-    """
+
     state, n_playout, c_puct, seed = args
 
     np.random.seed(seed)
 
-    # create local MCTS
     mcts = MCTS(policy_value_fn, c_puct=c_puct, n_playout=n_playout)
 
-    # do search
     state_copy = copy.deepcopy(state)
     _ = mcts.get_move(state_copy)
 
@@ -41,21 +38,25 @@ def _worker_job(args):
 
 class MCTSPureRootParallel(object):
 
-    def __init__(self, c_puct=5, n_playout=2000, n_workers=4, time_limit=None):
+
+    def __init__(self, c_puct=5, n_playout=10000,
+                 n_workers=4, time_limit=None):
+
         self._c_puct = c_puct
-        self._n_playout = n_playout
-        self._n_workers = n_workers
+        self._n_playout = int(n_playout)
+        self._n_workers = int(max(1, n_workers))
         self._time_limit = time_limit
 
-        # fallback single-thread version
+
         self._single_mcts = MCTS(policy_value_fn, c_puct, n_playout)
 
-        if (n_workers <= 1) or (n_playout <= n_workers):
+        if (self._n_workers <= 1):
+
             self._executor = None
-            self._n_per_worker = None
         else:
-            self._n_per_worker = n_playout // n_workers
-            self._executor = ProcessPoolExecutor(max_workers=n_workers)
+
+            self._chunk_n_per_worker = max(1, self._n_playout // self._n_workers)
+            self._executor = ProcessPoolExecutor(max_workers=self._n_workers)
 
     def close(self):
         if self._executor is not None:
@@ -65,85 +66,107 @@ class MCTSPureRootParallel(object):
     def __del__(self):
         try:
             self.close()
-        except:
+        except Exception:
             pass
 
-    # ============================================================
-    # get_move() with support for time-limit
-    # ============================================================
+    def _run_one_batch(self, state, n_playout_per_worker):
+     
+        jobs = []
+        for _ in range(self._n_workers):
+            s = copy.deepcopy(state)
+            seed = np.random.randint(0, 10**9)
+            jobs.append((s, n_playout_per_worker, self._c_puct, seed))
+
+        total_visits = defaultdict(float)
+
+        for acts, visits in self._executor.map(_worker_job, jobs):
+            for a, v in zip(acts, visits):
+                total_visits[a] += float(v)
+
+        if not total_visits:
+            return [], [], 0
+
+        acts = list(total_visits.keys())
+        visits = [total_visits[a] for a in acts]
+        sims_this_batch = n_playout_per_worker * self._n_workers
+        return acts, visits, sims_this_batch
+
     def get_move(self, state):
-        """Run root-parallel MCTS and pick the action with highest visit count."""
 
-        # --- case 1: no parallel ---
         if self._executor is None:
-            if self._time_limit is None:
-                return self._single_mcts.get_move(state)  # (move)
-            else:
-                # time-limit sequential fallback
-                return self._run_single_with_time(state)
+            move, simulation_count = self._single_mcts.get_move(copy.deepcopy(state))
+            return move, simulation_count
 
-        # --- case 2: parallel root search ---
         total_visits = defaultdict(float)
         simulation_count = 0
 
-        start_time = time.time()
-        use_time = self._time_limit is not None
-        deadline = start_time + (self._time_limit or 0)
 
-        while True:
-            # stop by time or playout count
-            if use_time:
-                if time.time() >= deadline:
-                    break
-            else:
-                if simulation_count >= self._n_playout:
+        if self._time_limit is not None:
+            start_time = time.time()
+   
+            while True:
+                now = time.time()
+                if (now - start_time) >= self._time_limit and simulation_count > 0:
                     break
 
-            # schedule workers
-            jobs = []
-            for _ in range(self._n_workers):
-                s = copy.deepcopy(state)
-                seed = np.random.randint(0, 10**9)
-                jobs.append((s, self._n_per_worker, self._c_puct, seed))
+                acts, visits, sims = self._run_one_batch(
+                    state, self._chunk_n_per_worker
+                )
+                if sims == 0:
+                    break
 
-            # gather from workers
-            for acts, visits in self._executor.map(_worker_job, jobs):
+                simulation_count += sims
                 for a, v in zip(acts, visits):
-                    total_visits[a] += float(v)
+                    total_visits[a] += v
 
-            simulation_count += self._n_workers * self._n_per_worker
+                if (time.time() - start_time) >= self._time_limit:
+                    break
+
+        else:
+            while simulation_count < self._n_playout:
+                sims_left = self._n_playout - simulation_count
+
+                n_per_worker = min(
+                    self._chunk_n_per_worker,
+                    max(1, sims_left // self._n_workers)
+                )
+
+                acts, visits, sims = self._run_one_batch(
+                    state, n_per_worker
+                )
+                if sims == 0:
+                    break
+
+                simulation_count += sims
+                for a, v in zip(acts, visits):
+                    total_visits[a] += v
+
+                if sims_left <= self._n_workers:
+                    break
 
         if not total_visits:
-            raise RuntimeError("Pure Root Parallel: no visits returned.")
+            avail = getattr(state, "availables", None)
+            if avail:
+                rand_move = np.random.choice(avail)
+                return rand_move, simulation_count
 
-        # pick the action with max visits
-        best_act, _ = max(total_visits.items(), key=lambda x: x[1])
-        return best_act
-
-    def _run_single_with_time(self, state):
-        """Sequential fallback for time-limit mode."""
-        mcts = self._single_mcts
-        simulation_count = 0
-        deadline = time.time() + self._time_limit
-
-        while time.time() < deadline:
-            s = copy.deepcopy(state)
-            mcts._playout(s)
-            simulation_count += 1
-
-        return mcts.get_move(state)
+            raise RuntimeError("MCTSPureRootParallel: no visits and no availables")
+        best_move, _ = max(total_visits.items(), key=lambda x: x[1])
+        return best_move, simulation_count
 
     def update_with_move(self, last_move):
-        # Pure MCTS: no tree reuse → no-op
+      
         return
 
     def __str__(self):
-        return "MCTSPureRootParallel"
-
+        return "MCTSPureRootParallelTimed"
+    
 
 class MCTSPureRootParallelPlayer(object):
+    
 
-    def __init__(self, c_puct=5, n_playout=2000, n_workers=4, time_limit=None):
+    def __init__(self, c_puct=5, n_playout=10000,
+                 n_workers=4, time_limit=None):
         self.mcts = MCTSPureRootParallel(
             c_puct=c_puct,
             n_playout=n_playout,
@@ -155,17 +178,16 @@ class MCTSPureRootParallelPlayer(object):
         self.player = p
 
     def reset_player(self):
-        # pure version: no-op
         self.mcts.update_with_move(-1)
 
     def get_action(self, board):
         sensible_moves = board.availables
-        if len(sensible_moves) == 0:
-            print("WARNING: board is full")
-            return None
-        move = self.mcts.get_move(board)
-        self.mcts.update_with_move(-1)
-        return move
+        if len(sensible_moves) > 0:
+            move, sim_count = self.mcts.get_move(board)
+            self.mcts.update_with_move(-1)
+            return move, sim_count
+        else:
+            print("WARNING: the board is full")
 
     def __str__(self):
         return "MCTSPureRootParallelPlayer {}".format(self.player)
